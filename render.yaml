@@ -1,13 +1,16 @@
 services:
   - type: web
-    name: void-logger
+    name: void-secure-logger
     env: node
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: npm start
     envVars:
       - key: NODE_VERSION
-        value: 16.18.1
+        value: 18.17.0
       - key: DISCORD_WEBHOOK_URL
         sync: false  # You'll set this in Render dashboard
       - key: SHARED_SECRET
-        value: "V0!d_S3cur3_K3y_@2024#RBLX"  # Change this!
+        sync: false  # You'll set this in Render dashboard
+    healthCheckPath: /health
+    autoDeploy: true
+    plan: free

@@ -1,32 +1,3 @@
-# Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Environment variables
 .env
-.env.local
-.env.*.local
-
-# Runtime data
-logs/
 *.log
-pids/
-*.pid
-*.seed
-
-# Coverage
-coverage/
-.nyc_output/
-
-# Misc
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Render
-.render/

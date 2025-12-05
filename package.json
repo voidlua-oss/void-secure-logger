@@ -1,0 +1,17 @@
+{
+  "name": "void-secure-logger",
+  "version": "2.8.0",
+  "description": "Discord Webhook Logger for Roblox",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"No tests\" && exit 0"
+  },
+  "engines": {
+    "node": "16.x"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
+  }
+}

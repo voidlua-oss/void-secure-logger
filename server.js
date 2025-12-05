@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 setInterval(() => {
     const now = new Date().toLocaleTimeString();
     console.log(`💓 [${now}] Keep-alive ping`);
-}, 5 * 60 * 1000); // Every 5 minutes
+}, 4 * 60 * 1000); // Every 5 minutes
 
 // ========== REQUEST STORE (Rate Limiting) ==========
 const requestStore = new Map();

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: void-logger
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 16.18.1
+      - key: DISCORD_WEBHOOK_URL
+        sync: false  # You'll set this in Render dashboard
+      - key: SHARED_SECRET
+        value: "V0!d_S3cur3_K3y_@2024#RBLX"  # Change this!

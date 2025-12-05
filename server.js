@@ -1,4 +1,9 @@
-// server.js - FIXED VERSION
+
+// ====================================================
+// VOID SECURE LOGGER - COMPLETE VERSION
+// For: https://void-secure-logger.onrender.com
+// ====================================================
+
 const express = require('express');
 const axios = require('axios');
 const app = express();
@@ -8,17 +13,125 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const SHARED_SECRET = process.env.SHARED_SECRET || "V0!d_S3cur3K3y@2024#RBLX";
 const PORT = process.env.PORT || 3000;
 
-// ========== LOGGING ==========
-console.log('🔧 Starting Void Logger...');
-console.log('🌐 Discord Webhook:', DISCORD_WEBHOOK ? 'SET' : 'NOT SET');
-console.log('🔐 Secret:', SHARED_SECRET ? 'SET' : 'USING DEFAULT');
+// ========== KEEP-ALIVE PING ==========
+setInterval(() => {
+    const now = new Date().toLocaleTimeString();
+    console.log(`💓 [${now}] Keep-alive ping`);
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// ========== REQUEST STORE (Rate Limiting) ==========
+const requestStore = new Map();
+
+// Clean old requests every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [key, value] of requestStore.entries()) {
+        if (now - value > 5 * 60 * 1000) {
+            requestStore.delete(key);
+            cleaned++;
+        }
+    }
+    if (cleaned > 0) {
+        console.log(`🧹 Cleaned ${cleaned} old requests`);
+    }
+}, 5 * 60 * 1000);
+
+// ========== DECRYPTION FUNCTIONS ==========
+function customDecode(encoded) {
+    let decoded = "";
+    for (let i = 0; i < encoded.length; i += 3) {
+        const charCode = parseInt(encoded.substr(i, 3));
+        if (!isNaN(charCode)) {
+            decoded += String.fromCharCode(charCode);
+        }
+    }
+    return decoded;
+}
+
+function xorDecrypt(data, key) {
+    let result = "";
+    for (let i = 0; i < data.length; i++) {
+        const dataByte = data.charCodeAt(i);
+        const keyByte = key.charCodeAt(i % key.length);
+        result += String.fromCharCode(dataByte ^ keyByte);
+    }
+    return result;
+}
+
+// ========== DISCORD EMBED FORMATTING ==========
+function formatDiscordEmbed(data) {
+    // EXACT FORMAT from your screenshot
+    return {
+        username: "Void Execution Logger (APP)",
+        embeds: [{
+            title: "Execution Logged",
+            color: 16711680, // Red
+            fields: [
+                {
+                    name: "User ID",
+                    value: "```" + (data.user_id || "Unknown") + "```",
+                    inline: true
+                },
+                {
+                    name: "Username",
+                    value: "```" + (data.username || "Unknown") + "```",
+                    inline: true
+                },
+                {
+                    name: "Account Age",
+                    value: "```" + (data.account_age || "Unknown") + "```",
+                    inline: true
+                },
+                {
+                    name: "Game",
+                    value: "```" + (data.game_name || "Unknown Game") + "```",
+                    inline: true
+                },
+                {
+                    name: "Server ID",
+                    value: "```" + (data.server_id || "Unknown") + "```",
+                    inline: true
+                },
+                {
+                    name: "Join Link",
+                    value: data.join_link || "https://www.roblox.com",
+                    inline: false
+                },
+                {
+                    name: "HWID",
+                    value: "```" + (data.hwid || "Unknown") + "```",
+                    inline: false
+                }
+            ],
+            thumbnail: {
+                url: "https://www.roblox.com/headshot-thumbnail/image?userId=" + 
+                     (data.user_id || "1") + 
+                     "&width=420&height=420&format=png"
+            },
+            timestamp: new Date().toISOString()
+        }]
+    };
+}
 
 // ========== MIDDLEWARE ==========
 app.use(express.json());
 
+// CORS headers
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    next();
+});
+
 // ========== ROUTES ==========
 
-// GET / - Homepage with instructions
+// GET / - Homepage
 app.get('/', (req, res) => {
     const html = `
     <!DOCTYPE html>
@@ -27,61 +140,76 @@ app.get('/', (req, res) => {
         <title>Void Secure Logger</title>
         <style>
             body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .online { background: #d4edda; color: #155724; }
+            .offline { background: #f8d7da; color: #721c24; }
             .endpoint { background: #f5f5f5; padding: 10px; margin: 10px 0; border-left: 4px solid #007bff; }
             code { background: #eee; padding: 2px 5px; }
+            .btn { display: inline-block; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 5px; }
         </style>
     </head>
     <body>
         <h1>🚀 Void Secure Logger</h1>
-        <p><strong>Status:</strong> ✅ Online</p>
-        <p><strong>Version:</strong> 3.1.0</p>
+        
+        <div class="status ${DISCORD_WEBHOOK ? 'online' : 'offline'}">
+            <strong>Status:</strong> ${DISCORD_WEBHOOK ? '✅ Online' : '❌ Discord Not Configured'}
+        </div>
+        
+        <p><strong>Version:</strong> 3.2.0</p>
         <p><strong>Discord Webhook:</strong> ${DISCORD_WEBHOOK ? '✅ Configured' : '❌ Not Configured'}</p>
+        <p><strong>Server Time:</strong> ${new Date().toLocaleTimeString()}</p>
         
         <h2>📡 Endpoints:</h2>
         
         <div class="endpoint">
             <h3>GET <code>/</code></h3>
             <p>This page - shows server status</p>
+            <a href="/" class="btn">Refresh</a>
         </div>
         
         <div class="endpoint">
             <h3>GET <code>/health</code></h3>
             <p>Health check endpoint</p>
-            <a href="/health">Test Health</a>
+            <a href="/health" class="btn">Test Health</a>
         </div>
         
         <div class="endpoint">
             <h3>GET <code>/test-discord</code></h3>
-            <p>Test Discord webhook connection</p>
-            <a href="/test-discord">Test Discord</a>
+            <p>Test Discord webhook connection (sends test embed)</p>
+            <a href="/test-discord" class="btn">Test Discord</a>
         </div>
         
         <div class="endpoint">
             <h3>POST <code>/log</code> (MAIN ENDPOINT)</h3>
             <p>Accepts encrypted logs from Roblox Lua scripts</p>
             <p><em>This endpoint only accepts POST requests</em></p>
+            <p><strong>Format:</strong></p>
+            <pre>
+{
+  "data": "encoded_encrypted_data",
+  "signature": "signature_hash",
+  "timestamp": 1234567890,
+  "request_id": "unique_id"
+}
+            </pre>
         </div>
         
-        <h2>🔧 Quick Test:</h2>
-        <form id="testForm">
-            <input type="text" id="message" placeholder="Test message" value="Hello from browser">
-            <button type="submit">Send Test to Discord</button>
-        </form>
+        <h2>🔧 Quick Tests:</h2>
+        <div>
+            <a href="/test-discord" class="btn">📨 Test Discord Webhook</a>
+            <a href="/health" class="btn">🩺 Health Check</a>
+        </div>
         
-        <script>
-            document.getElementById('testForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const message = document.getElementById('message').value;
-                
-                try {
-                    const response = await fetch('/test-discord');
-                    const result = await response.json();
-                    alert(result.message || 'Test sent!');
-                } catch (error) {
-                    alert('Error: ' + error.message);
-                }
-            });
-        </script>
+        <h2>📊 Server Info:</h2>
+        <ul>
+            <li><strong>Uptime:</strong> ${process.uptime().toFixed(0)} seconds</li>
+            <li><strong>Memory:</strong> ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB</li>
+            <li><strong>Node Version:</strong> ${process.version}</li>
+            <li><strong>Requests in Memory:</strong> ${requestStore.size}</li>
+        </ul>
+        
+        <hr>
+        <p><em>Void Secure Logger v3.2.0 • Running on Render.com</em></p>
     </body>
     </html>
     `;
@@ -92,55 +220,79 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'healthy',
-        service: 'Void Logger',
-        version: '3.1.0',
+        service: 'Void Secure Logger',
+        version: '3.2.0',
         timestamp: new Date().toISOString(),
         discord_configured: !!DISCORD_WEBHOOK,
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        requests_in_memory: requestStore.size,
+        node_version: process.version
     });
 });
 
 // GET /test-discord - Test Discord connection
 app.get('/test-discord', async (req, res) => {
     if (!DISCORD_WEBHOOK) {
-        return res.status(400).json({ 
-            error: 'No Discord webhook configured',
-            fix: 'Set DISCORD_WEBHOOK_URL environment variable on Render'
-        });
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><title>Discord Test Failed</title></head>
+        <body>
+            <h1>❌ Discord Test Failed</h1>
+            <p><strong>Error:</strong> No Discord webhook configured</p>
+            <p><strong>Fix:</strong> Set the <code>DISCORD_WEBHOOK_URL</code> environment variable on Render</p>
+            <p><a href="/">← Back to Home</a></p>
+        </body>
+        </html>
+        `;
+        return res.status(400).send(html);
     }
     
     try {
         console.log('🔄 Testing Discord webhook...');
         
-        const embed = {
-            username: "Void Logger",
+        const testEmbed = {
+            username: "Void Execution Logger (APP)",
             embeds: [{
-                title: "🟢 WEBHOOK TEST",
-                description: "This is a test message from your Render server",
-                color: 65280, // Green
+                title: "Execution Logged",
+                color: 16711680,
                 fields: [
-                    { name: "Status", value: "✅ Working", inline: true },
-                    { name: "Time", value: new Date().toLocaleTimeString(), inline: true },
-                    { name: "Server", value: "Render.com", inline: true }
+                    { name: "User ID", value: "```1234567890```", inline: true },
+                    { name: "Username", value: "```TestUser```", inline: true },
+                    { name: "Account Age", value: "```100 days```", inline: true },
+                    { name: "Game", value: "```Test Game```", inline: true },
+                    { name: "Server ID", value: "```test-server-id```", inline: true },
+                    { name: "Join Link", value: "https://www.roblox.com", inline: false },
+                    { name: "HWID", value: "```TEST_HWID_123```", inline: false }
                 ],
-                timestamp: new Date().toISOString(),
-                footer: { text: "Void Logger Test" }
+                thumbnail: {
+                    url: "https://www.roblox.com/headshot-thumbnail/image?userId=1&width=420&height=420&format=png"
+                },
+                timestamp: new Date().toISOString()
             }]
         };
         
-        const response = await axios.post(DISCORD_WEBHOOK, embed, {
+        const response = await axios.post(DISCORD_WEBHOOK, testEmbed, {
             headers: { 'Content-Type': 'application/json' },
             timeout: 10000
         });
         
         console.log(`✅ Discord test success: ${response.status}`);
         
-        res.json({ 
-            success: true, 
-            message: 'Test sent to Discord successfully',
-            status_code: response.status,
-            timestamp: new Date().toISOString()
-        });
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><title>Discord Test Success</title></head>
+        <body>
+            <h1>✅ Discord Test Successful!</h1>
+            <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+            <p>A test embed has been sent to your Discord channel.</p>
+            <p><a href="/">← Back to Home</a></p>
+        </body>
+        </html>
+        `;
+        res.send(html);
         
     } catch (error) {
         console.error('❌ Discord test failed:', error.message);
@@ -153,30 +305,56 @@ app.get('/test-discord', async (req, res) => {
             }
         }
         
-        res.status(500).json({ 
-            error: 'Failed to send to Discord',
-            details: errorDetails,
-            fix: 'Check your webhook URL in Render environment variables'
-        });
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><title>Discord Test Failed</title></head>
+        <body>
+            <h1>❌ Discord Test Failed</h1>
+            <p><strong>Error:</strong> ${errorDetails}</p>
+            <p><strong>Possible fixes:</strong></p>
+            <ul>
+                <li>Check your webhook URL is correct</li>
+                <li>Make sure the webhook hasn't been deleted in Discord</li>
+                <li>Check Discord rate limits</li>
+            </ul>
+            <p><a href="/">← Back to Home</a></p>
+        </body>
+        </html>
+        `;
+        res.status(500).send(html);
     }
 });
 
-// GET /log - Show info page (for debugging)
+// GET /log - Info page
 app.get('/log', (req, res) => {
     const html = `
     <!DOCTYPE html>
     <html>
-    <head><title>Void Logger - /log Endpoint</title></head>
+    <head><title>/log Endpoint Info</title></head>
     <body>
         <h1>📝 /log Endpoint</h1>
-        <p><strong>This endpoint only accepts POST requests!</strong></p>
+        <p><strong>⚠️ This endpoint only accepts POST requests!</strong></p>
         <p>It receives encrypted logs from Roblox Lua scripts.</p>
-        <p>To test, use curl or Postman:</p>
+        
+        <h2>📦 Expected Format:</h2>
+        <pre>
+{
+  "data": "encoded_encrypted_json_string",
+  "signature": "hex_signature",
+  "timestamp": 1234567890,
+  "version": "3.2.0",
+  "request_id": "RBLX_1234567890_1234567"
+}
+        </pre>
+        
+        <h2>🔧 Test with curl:</h2>
         <pre>
 curl -X POST https://void-secure-logger.onrender.com/log \\
   -H "Content-Type: application/json" \\
-  -d '{"test":"data"}'
+  -d '{"data":"123456789","signature":"test","timestamp":1234567890,"request_id":"test"}'
         </pre>
+        
         <p><a href="/">← Back to Home</a></p>
     </body>
     </html>
@@ -184,156 +362,209 @@ curl -X POST https://void-secure-logger.onrender.com/log \\
     res.send(html);
 });
 
-// POST /log - Main logging endpoint (Lua scripts send here)
+// POST /log - Main logging endpoint
 app.post('/log', async (req, res) => {
-    console.log('📨 Received POST to /log endpoint');
-    console.log('Request IP:', req.ip);
-    console.log('Request headers:', req.headers['user-agent']);
+    const startTime = Date.now();
+    const requestId = req.body.request_id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`📨 [${new Date().toLocaleTimeString()}] New log request: ${requestId}`);
     
     try {
-        const { data, signature, timestamp, request_id } = req.body;
-        
-        // Log request (without sensitive data)
-        console.log('📦 Request metadata:', {
-            has_data: !!data,
-            data_length: data ? data.length : 0,
-            has_signature: !!signature,
-            has_timestamp: !!timestamp,
-            request_id: request_id || 'none'
-        });
-        
-        if (!data || !timestamp) {
-            console.log('❌ Missing required fields');
+        const { data, signature, timestamp, version, request_id } = req.body;
+
+        // Basic validation
+        if (!data || !timestamp || !request_id) {
+            console.log(`❌ [${requestId}] Missing required fields`);
             return res.status(400).json({ 
-                success: false, 
-                error: "Missing required fields (data, timestamp)" 
+                success: false,
+                error: "Missing required fields: data, timestamp, request_id",
+                request_id: requestId
             });
         }
-        
-        // DECRYPTION (simplified for debugging)
-        console.log('🔓 Attempting decryption...');
+
+        // Check for duplicate requests
+        if (requestStore.has(request_id)) {
+            console.log(`⚠️ [${requestId}] Duplicate request detected`);
+            return res.status(400).json({ 
+                success: false,
+                error: "Duplicate request detected",
+                request_id: requestId
+            });
+        }
+        requestStore.set(request_id, Date.now());
+
+        // IP-based rate limiting
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+        const ipKey = `ip_${ip}`;
+        const ipCount = requestStore.get(ipKey) || 0;
+
+        if (ipCount > 20) { // Max 20 requests per IP
+            console.log(`⏸️ [${requestId}] Rate limited IP: ${ip}`);
+            return res.status(429).json({ 
+                success: false,
+                error: "Rate limit exceeded. Please wait before sending more logs.",
+                retry_after: 60,
+                request_id: requestId
+            });
+        }
+        requestStore.set(ipKey, ipCount + 1);
+
+        // Decrypt the data
+        console.log(`🔓 [${requestId}] Decrypting data...`);
         
         let payload;
         try {
-            // Custom decode
-            let decoded = "";
-            for (let i = 0; i < data.length; i += 3) {
-                const charCode = parseInt(data.substr(i, 3));
-                if (!isNaN(charCode)) {
-                    decoded += String.fromCharCode(charCode);
-                }
-            }
-            
-            // XOR decrypt
+            const decoded = customDecode(data);
             const encryptionKey = SHARED_SECRET + timestamp;
-            let decrypted = "";
-            for (let i = 0; i < decoded.length; i++) {
-                const dataByte = decoded.charCodeAt(i);
-                const keyByte = encryptionKey.charCodeAt(i % encryptionKey.length);
-                decrypted += String.fromCharCode(dataByte ^ keyByte);
-            }
-            
+            const decrypted = xorDecrypt(decoded, encryptionKey);
             payload = JSON.parse(decrypted);
-            console.log('✅ Decryption successful!');
-            console.log('👤 User:', payload.username);
-            console.log('🎮 Game:', payload.game_name);
+            
+            console.log(`✅ [${requestId}] Decryption successful!`);
+            console.log(`   👤 User: ${payload.username || 'Unknown'}`);
+            console.log(`   🆔 ID: ${payload.user_id || 'Unknown'}`);
+            console.log(`   🎮 Game: ${payload.game_name || 'Unknown'}`);
+            console.log(`   🔑 HWID: ${payload.hwid ? 'Provided' : 'Missing'}`);
             
         } catch (decryptError) {
-            console.error('❌ Decryption failed:', decryptError.message);
-            console.log('Raw data (first 100 chars):', data ? data.substring(0, 100) : 'none');
+            console.error(`❌ [${requestId}] Decryption failed:`, decryptError.message);
             
-            // Try to accept simple test payloads
-            if (typeof req.body === 'object' && req.body.username) {
-                console.log('⚠️ Using raw payload (test mode)');
+            // Try to see if it's a simple test payload
+            if (req.body.username && req.body.user_id) {
+                console.log(`⚠️ [${requestId}] Using raw test payload`);
                 payload = req.body;
             } else {
                 return res.status(400).json({ 
-                    success: false, 
-                    error: "Decryption failed",
-                    hint: "Check encryption/decryption keys match" 
+                    success: false,
+                    error: "Decryption failed. Check encryption keys match.",
+                    hint: "Make sure SHARED_SECRET env var matches Lua script secret",
+                    request_id: requestId
                 });
             }
         }
-        
-        // FORWARD TO DISCORD
+
+        // Send to Discord (with delay to prevent spam)
         if (DISCORD_WEBHOOK && payload) {
-            console.log('📤 Forwarding to Discord...');
+            console.log(`📤 [${requestId}] Queuing for Discord...`);
             
-            try {
-                const discordPayload = {
-                    username: "Void Logger",
-                    embeds: [{
-                        title: "🎮 Execution Logged",
-                        color: 16711680, // Red
-                        fields: [
-                            { name: "👤 Username", value: payload.username || "Unknown", inline: true },
-                            { name: "🆔 User ID", value: payload.user_id ? `\`${payload.user_id}\`` : "Unknown", inline: true },
-                            { name: "📅 Account Age", value: payload.account_age || "Unknown", inline: true },
-                            { name: "🎯 Game", value: payload.game_name || "Roblox Game", inline: false },
-                            { name: "🆔 HWID", value: payload.hwid ? `\`${payload.hwid}\`` : "Unknown", inline: false },
-                            { name: "⏰ Time", value: payload.execution_time || new Date().toLocaleTimeString(), inline: true }
-                        ],
-                        timestamp: new Date().toISOString(),
-                        footer: { text: `Void Logger v${payload.script_version || "3.1.0"}` }
-                    }]
-                };
-                
-                console.log('Sending Discord payload:', JSON.stringify(discordPayload, null, 2));
-                
-                const discordResponse = await axios.post(DISCORD_WEBHOOK, discordPayload, {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 15000
-                });
-                
-                console.log(`✅ Discord success: ${discordResponse.status}`);
-                
-            } catch (discordError) {
-                console.error('❌ Discord error:', discordError.message);
-                if (discordError.response) {
-                    console.error('Discord response:', discordError.response.status);
-                    console.error('Discord data:', discordError.response.data);
+            // Use setTimeout to send asynchronously (don't wait for Discord)
+            setTimeout(async () => {
+                try {
+                    const discordPayload = formatDiscordEmbed(payload);
+                    
+                    const discordResponse = await axios.post(DISCORD_WEBHOOK, discordPayload, {
+                        headers: { 'Content-Type': 'application/json' },
+                        timeout: 15000
+                    });
+                    
+                    console.log(`✅ [${requestId}] Discord: ${discordResponse.status} ${discordResponse.statusText}`);
+                    
+                } catch (discordError) {
+                    console.error(`❌ [${requestId}] Discord error:`, discordError.message);
+                    if (discordError.response) {
+                        console.error(`   Status: ${discordError.response.status}`);
+                        console.error(`   Data:`, discordError.response.data);
+                    }
+                    // Don't crash if Discord fails
                 }
-                // Don't fail the request - still return success to Lua
-            }
+            }, 2000); // 2 second delay
         } else if (!DISCORD_WEBHOOK) {
-            console.warn('⚠️ No Discord webhook configured - skipping Discord');
+            console.warn(`⚠️ [${requestId}] No Discord webhook configured - skipping Discord`);
         }
+
+        const processingTime = Date.now() - startTime;
         
-        // SUCCESS RESPONSE TO LUA
+        // Return success to Lua script
         res.json({ 
             success: true, 
             message: "Log processed successfully",
-            request_id: request_id || 'none',
-            discord_sent: !!DISCORD_WEBHOOK,
-            timestamp: new Date().toISOString()
+            request_id: requestId,
+            processing_time: `${processingTime}ms`,
+            discord_queued: !!DISCORD_WEBHOOK,
+            timestamp: new Date().toISOString(),
+            data_received: {
+                username: payload.username || "Unknown",
+                user_id: payload.user_id || "Unknown",
+                game: payload.game_name || "Unknown"
+            }
         });
-        
+
     } catch (error) {
-        console.error('💥 Server error:', error.message);
+        console.error(`💥 [${requestId}] Server error:`, error.message);
         console.error(error.stack);
         
         res.status(500).json({ 
             success: false,
-            error: "Internal server error",
-            message: error.message,
+            error: "Internal server error processing log",
+            request_id: requestId,
             timestamp: new Date().toISOString()
         });
     }
 });
 
+// 404 handler
+app.use((req, res) => {
+    res.status(404).send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>404 Not Found</title></head>
+    <body>
+        <h1>❌ 404 - Endpoint Not Found</h1>
+        <p>The requested endpoint <code>${req.url}</code> was not found.</p>
+        <p><strong>Available endpoints:</strong></p>
+        <ul>
+            <li><a href="/">GET /</a> - Homepage</li>
+            <li><a href="/health">GET /health</a> - Health check</li>
+            <li><a href="/test-discord">GET /test-discord</a> - Test Discord</li>
+            <li>POST /log - Log endpoint (POST only)</li>
+        </ul>
+        <p><a href="/">← Back to Home</a></p>
+    </body>
+    </html>
+    `);
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+    console.error('🚨 Unhandled error:', err);
+    res.status(500).send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>500 Server Error</title></head>
+    <body>
+        <h1>💥 500 - Server Error</h1>
+        <p>An unexpected error occurred.</p>
+        <p><code>${err.message}</code></p>
+        <p><a href="/">← Back to Home</a></p>
+    </body>
+    </html>
+    `);
+});
+
 // ========== START SERVER ==========
 app.listen(PORT, () => {
     console.log(`=========================================`);
-    console.log(`🚀 VOID LOGGER STARTED`);
+    console.log(`🚀 VOID SECURE LOGGER v3.2.0`);
+    console.log(`=========================================`);
     console.log(`📡 Port: ${PORT}`);
     console.log(`🌐 URL: https://void-secure-logger.onrender.com`);
     console.log(`🤖 Discord: ${DISCORD_WEBHOOK ? '✅ CONFIGURED' : '❌ NOT CONFIGURED'}`);
-    console.log(`🔗 Test: https://void-secure-logger.onrender.com/test-discord`);
+    console.log(`🔐 Secret: ${SHARED_SECRET ? 'SET' : 'USING DEFAULT'}`);
+    console.log(`⏰ Server Time: ${new Date().toLocaleTimeString()}`);
     console.log(`=========================================`);
     
     if (!DISCORD_WEBHOOK) {
-        console.error('\n❌ CRITICAL: No Discord webhook configured!');
-        console.log('💡 Fix: Go to Render Dashboard → Environment → Add:');
-        console.log('   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...\n');
+        console.error('\n❌ WARNING: No Discord webhook configured!');
+        console.log('💡 To fix, add to Render Dashboard → Environment:');
+        console.log('   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/ID/TOKEN\n');
     }
+    
+    if (SHARED_SECRET === "V0!d_S3cur3K3y@2024#RBLX") {
+        console.warn('⚠️  Using default secret. For production, change SHARED_SECRET env var.');
+    }
+    
+    console.log(`👉 Test endpoints:`);
+    console.log(`   • Homepage: https://void-secure-logger.onrender.com`);
+    console.log(`   • Health: https://void-secure-logger.onrender.com/health`);
+    console.log(`   • Discord Test: https://void-secure-logger.onrender.com/test-discord`);
+    console.log(`=========================================\n`);
 });

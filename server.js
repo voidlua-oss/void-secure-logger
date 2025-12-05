@@ -1,4 +1,4 @@
-// server.js - VOID LOGGER (FIXED VERSION)
+// server.js - DEBUG VERSION
 const express = require('express');
 const axios = require('axios');
 const app = express();
@@ -8,23 +8,12 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const SHARED_SECRET = process.env.SHARED_SECRET || "V0!d_S3cur3K3y@2024#RBLX";
 const PORT = process.env.PORT || 3000;
 
-// ========== KEEP-ALIVE PING ==========
-setInterval(() => {
-    console.log(`💓 Keep-alive ping: ${new Date().toLocaleTimeString()}`);
-}, 5 * 60 * 1000);
+// ========== LOGGING ==========
+console.log('🔧 Starting Void Logger...');
+console.log('🌐 Discord Webhook:', DISCORD_WEBHOOK ? 'SET' : 'NOT SET');
+console.log('🔐 Secret:', SHARED_SECRET);
 
-// ========== VOID LOGGER CORE ==========
-const requestStore = new Map();
-
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of requestStore.entries()) {
-        if (now - value > 5 * 60 * 1000) {
-            requestStore.delete(key);
-        }
-    }
-}, 5 * 60 * 1000);
-
+// ========== SIMPLIFIED FUNCTIONS ==========
 function customDecode(encoded) {
     let decoded = "";
     for (let i = 0; i < encoded.length; i += 3) {
@@ -46,80 +35,11 @@ function xorDecrypt(data, key) {
     return result;
 }
 
-function validateSignature(payload, signature, timestamp) {
-    let dataString = "";
-    Object.keys(payload).sort().forEach(key => {
-        dataString += key + "=" + payload[key] + "|";
-    });
-
-    const message = SHARED_SECRET + timestamp + dataString;
-    let hash = 0;
-
-    for (let i = 0; i < message.length; i++) {
-        const char = message.charCodeAt(i);
-        hash ^= (char << ((i % 4) * 8));
-        hash = (hash * 16777619) >>> 0;
-    }
-
-    const expectedSig = hash.toString(16).toUpperCase().padStart(8, '0');
-    return expectedSig === signature;
-}
-
-function formatDiscordEmbed(data) {
-    return {
-        username: "Void Logger",
-        avatar_url: `https://www.roblox.com/headshot-thumbnail/image?userId=${data.user_id}&width=150&height=150`,
-        embeds: [{
-            title: "🎮 Execution Logged",
-            color: 65280,
-            fields: [
-                { 
-                    name: "👤 Player", 
-                    value: `**${data.username}**\nID: \`${data.user_id}\``, 
-                    inline: true 
-                },
-                { 
-                    name: "📅 Account Age", 
-                    value: `\`${data.account_age}\``, 
-                    inline: true 
-                },
-                { 
-                    name: "🕐 Time", 
-                    value: `${data.execution_time}\n${data.execution_date}`, 
-                    inline: true 
-                },
-                { 
-                    name: "🎯 Game", 
-                    value: `**${data.game_name}**\nServer: \`${data.server_id}\``, 
-                    inline: false 
-                },
-                { 
-                    name: "🔗 Join", 
-                    value: `[Click Here](${data.join_link})`, 
-                    inline: true 
-                }
-            ],
-            thumbnail: {
-                url: `https://www.roblox.com/headshot-thumbnail/image?userId=${data.user_id}&width=150&height=150`
-            },
-            timestamp: new Date().toISOString(),
-            footer: {
-                text: `Void Logger v${data.script_version}`
-            }
-        }]
-    };
-}
-
 // ========== MIDDLEWARE ==========
 app.use(express.json());
 
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
+    console.log(`${req.method} ${req.url} - ${new Date().toISOString()}`);
     next();
 });
 
@@ -127,82 +47,149 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
     res.json({ 
         status: 'online',
-        service: 'Void Secure Logger',
-        version: '3.0.0'
+        service: 'Void Logger',
+        discord_configured: !!DISCORD_WEBHOOK,
+        time: new Date().toISOString()
     });
 });
 
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'healthy',
-        uptime: process.uptime()
-    });
+// TEST ENDPOINT - Send test to Discord
+app.get('/test-discord', async (req, res) => {
+    if (!DISCORD_WEBHOOK) {
+        return res.json({ error: 'No Discord webhook configured' });
+    }
+    
+    try {
+        const testEmbed = {
+            username: "Void Logger Test",
+            embeds: [{
+                title: "🟢 TEST MESSAGE",
+                description: "This is a test from your Render server",
+                color: 65280,
+                timestamp: new Date().toISOString(),
+                fields: [
+                    { name: "Status", value: "✅ Working", inline: true },
+                    { name: "Time", value: new Date().toLocaleTimeString(), inline: true },
+                    { name: "Server", value: "Render.com", inline: true }
+                ]
+            }]
+        };
+        
+        console.log('Sending test to Discord...');
+        const response = await axios.post(DISCORD_WEBHOOK, testEmbed, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        console.log('✅ Discord response:', response.status, response.statusText);
+        res.json({ 
+            success: true, 
+            message: 'Test sent to Discord',
+            status: response.status 
+        });
+        
+    } catch (error) {
+        console.error('❌ Discord error:', error.message);
+        if (error.response) {
+            console.error('Response data:', error.response.data);
+            console.error('Response status:', error.response.status);
+        }
+        res.status(500).json({ 
+            error: 'Failed to send to Discord',
+            message: error.message 
+        });
+    }
 });
 
+// MAIN LOGGING ENDPOINT
 app.post('/log', async (req, res) => {
+    console.log('📨 Received log request');
+    console.log('Request body keys:', Object.keys(req.body));
+    
     try {
         const { data, signature, timestamp, request_id } = req.body;
-
-        if (!data || !signature || !timestamp || !request_id) {
-            return res.status(400).json({ error: "Missing fields" });
+        
+        if (!data) {
+            console.log('❌ No data in request');
+            return res.status(400).json({ error: "No data" });
         }
-
-        if (requestStore.has(request_id)) {
-            return res.status(400).json({ error: "Duplicate request" });
-        }
-        requestStore.set(request_id, Date.now());
-
-        const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-        const ipKey = `ip_${ip}`;
-        const ipCount = requestStore.get(ipKey) || 0;
-
-        if (ipCount > 20) {
-            return res.status(429).json({ error: "Rate limited" });
-        }
-        requestStore.set(ipKey, ipCount + 1);
-
+        
+        // Decrypt the data
+        console.log('Decrypting data...');
         const decoded = customDecode(data);
         const encryptionKey = SHARED_SECRET + timestamp;
         const decrypted = xorDecrypt(decoded, encryptionKey);
-        const payload = JSON.parse(decrypted);
-
-        if (!validateSignature(payload, signature, timestamp)) {
-            return res.status(401).json({ error: "Invalid signature" });
+        
+        let payload;
+        try {
+            payload = JSON.parse(decrypted);
+            console.log('✅ Decrypted payload:', {
+                username: payload.username,
+                user_id: payload.user_id,
+                game: payload.game_name
+            });
+        } catch (e) {
+            console.log('❌ Failed to parse JSON:', e.message);
+            console.log('Raw decrypted:', decrypted);
+            return res.status(400).json({ error: "Invalid data format" });
         }
-
-        console.log(`📨 Log from: ${payload.username} in ${payload.game_name}`);
-
+        
+        // Send to Discord
         if (DISCORD_WEBHOOK) {
-            setTimeout(async () => {
-                try {
-                    const discordPayload = formatDiscordEmbed(payload);
-                    await axios.post(DISCORD_WEBHOOK, discordPayload, {
-                        headers: { 'Content-Type': 'application/json' },
-                        timeout: 10000
-                    });
-                } catch (discordError) {
-                    console.error('Discord error:', discordError.message);
+            console.log('📤 Forwarding to Discord...');
+            
+            const discordEmbed = {
+                username: "Void Logger",
+                embeds: [{
+                    title: "🎮 Execution Logged",
+                    color: 16711680,
+                    fields: [
+                        { name: "👤 User", value: `${payload.username} (${payload.user_id})`, inline: true },
+                        { name: "📛 Display", value: payload.display_name || "N/A", inline: true },
+                        { name: "📅 Account Age", value: payload.account_age || "Unknown", inline: true },
+                        { name: "🎯 Game", value: payload.game_name || "Unknown", inline: false },
+                        { name: "🆔 HWID", value: `\`${payload.hwid || "Unknown"}\``, inline: false },
+                        { name: "⏰ Time", value: payload.execution_time || new Date().toLocaleTimeString(), inline: true }
+                    ],
+                    timestamp: new Date().toISOString(),
+                    footer: { text: `Void Logger v${payload.script_version || "3.1.0"}` }
+                }]
+            };
+            
+            try {
+                const discordResponse = await axios.post(DISCORD_WEBHOOK, discordEmbed, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000
+                });
+                
+                console.log(`✅ Discord: ${discordResponse.status} ${discordResponse.statusText}`);
+                
+            } catch (discordError) {
+                console.error('❌ Discord send failed:', discordError.message);
+                if (discordError.response) {
+                    console.error('Discord response:', discordError.response.status, discordError.response.data);
                 }
-            }, 2000);
+                // Don't fail the request - still return success to Lua
+            }
+        } else {
+            console.warn('⚠️ No Discord webhook configured');
         }
-
+        
         res.json({ 
             success: true, 
-            message: "Log processed"
+            message: "Log processed",
+            forwarded_to_discord: !!DISCORD_WEBHOOK
         });
-
+        
     } catch (error) {
-        console.error('Error:', error.message);
+        console.error('💥 Server error:', error.message);
+        console.error(error.stack);
         res.status(500).json({ error: "Server error" });
     }
 });
 
 // ========== START SERVER ==========
 app.listen(PORT, () => {
-    console.log(`=========================================`);
-    console.log(`🚀 VOID LOGGER STARTED`);
-    console.log(`📡 Port: ${PORT}`);
-    console.log(`🔐 Secret: ${SHARED_SECRET ? "SET" : "DEFAULT"}`);
-    console.log(`🤖 Discord: ${DISCORD_WEBHOOK ? "READY" : "NOT SET"}`);
-    console.log(`=========================================`);
+    console.log(`🚀 Server started on port ${PORT}`);
+    console.log(`📊 Test Discord: https://void-secure-logger.onrender.com/test-discord`);
+    console.log(`📝 Log endpoint: POST https://void-secure-logger.onrender.com/log`);
 });

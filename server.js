@@ -1,5 +1,5 @@
 // ====================================================
-// VOID SECURE LOGGER - COMPLETE VERSION
+// VOID SECURE LOGGER - COMPLETE VERSION WITH GITHUB STATS
 // For: https://void-secure-logger.onrender.com
 // ====================================================
 
@@ -7,10 +7,16 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-// ========== ADD THESE 2 LINES HERE ==========
-const statsManager = require('./stats');
+// ========== STATS MANAGER ==========
+// Choose which stats manager to use:
+// Option 1: Local file storage (original)
+// const statsManager = require('./stats');
+// const statsRouter = require('./stats-routes');
+
+// Option 2: GitHub storage (recommended)
+const GitHubStatsManager = require('./github-stats-manager');
+const statsManager = new GitHubStatsManager();
 const statsRouter = require('./stats-routes');
-// ============================================
 
 // ========== CONFIGURATION ==========
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
@@ -133,6 +139,36 @@ app.use((req, res, next) => {
     next();
 });
 
+// ========== GITHUB STATS STATUS ENDPOINT ==========
+app.get('/github-status', async (req, res) => {
+    try {
+        const stats = await statsManager.loadStats();
+        const repoOwner = process.env.GITHUB_REPO_OWNER || 'your-username';
+        const repoName = process.env.GITHUB_REPO_NAME || 'void-secure-logger-stats';
+        const repoUrl = `https://github.com/${repoOwner}/${repoName}`;
+        
+        res.json({
+            status: 'connected',
+            storage: 'github',
+            repository: repoUrl,
+            stats_file: `${repoUrl}/blob/main/execution-stats.json`,
+            raw_json: `https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/execution-stats.json`,
+            last_updated: stats.last_updated || 'never',
+            total_executions: stats.total_executions || 0,
+            total_games: Object.keys(stats.games || {}).length,
+            total_users: Object.keys(stats.users || {}).length,
+            start_date: stats.start_date || 'unknown'
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message,
+            storage: 'github',
+            recommendation: 'Check GITHUB_TOKEN and repository settings'
+        });
+    }
+});
+
 // ========== ROUTES ==========
 
 // GET / - Homepage
@@ -150,6 +186,7 @@ app.get('/', (req, res) => {
             .endpoint { background: #f5f5f5; padding: 10px; margin: 10px 0; border-left: 4px solid #007bff; }
             code { background: #eee; padding: 2px 5px; }
             .btn { display: inline-block; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 5px; }
+            .github-badge { background: #24292e; color: white; padding: 5px 10px; border-radius: 3px; font-family: monospace; }
         </style>
     </head>
     <body>
@@ -159,7 +196,12 @@ app.get('/', (req, res) => {
             <strong>Status:</strong> ${DISCORD_WEBHOOK ? '✅ Online' : '❌ Discord Not Configured'}
         </div>
         
-        <p><strong>Version:</strong> 3.2.0</p>
+        <div class="status online">
+            <strong>Storage:</strong> 📊 GitHub Statistics Storage
+            <div class="github-badge">github-stats-manager.js</div>
+        </div>
+        
+        <p><strong>Version:</strong> 3.2.1</p>
         <p><strong>Discord Webhook:</strong> ${DISCORD_WEBHOOK ? '✅ Configured' : '❌ Not Configured'}</p>
         <p><strong>Server Time:</strong> ${new Date().toLocaleTimeString()}</p>
         
@@ -184,6 +226,12 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="endpoint">
+            <h3>GET <code>/github-status</code></h3>
+            <p>Check GitHub stats storage connection</p>
+            <a href="/github-status" class="btn">GitHub Status</a>
+        </div>
+        
+        <div class="endpoint">
             <h3>POST <code>/log</code> (MAIN ENDPOINT)</h3>
             <p>Accepts encrypted logs from Roblox Lua scripts</p>
             <p><em>This endpoint only accepts POST requests</em></p>
@@ -198,10 +246,18 @@ app.get('/', (req, res) => {
             </pre>
         </div>
         
+        <div class="endpoint">
+            <h3>GET <code>/stats</code></h3>
+            <p>Statistics Dashboard with GitHub storage</p>
+            <a href="/stats" class="btn">📊 View Stats</a>
+        </div>
+        
         <h2>🔧 Quick Tests:</h2>
         <div>
             <a href="/test-discord" class="btn">📨 Test Discord Webhook</a>
+            <a href="/github-status" class="btn">🐙 GitHub Status</a>
             <a href="/health" class="btn">🩺 Health Check</a>
+            <a href="/stats" class="btn">📊 Stats Dashboard</a>
         </div>
         
         <h2>📊 Server Info:</h2>
@@ -213,7 +269,7 @@ app.get('/', (req, res) => {
         </ul>
         
         <hr>
-        <p><em>Void Secure Logger v3.2.0 • Running on Render.com</em></p>
+        <p><em>Void Secure Logger v3.2.1 • GitHub Storage • Running on Render.com</em></p>
     </body>
     </html>
     `;
@@ -225,9 +281,10 @@ app.get('/health', (req, res) => {
     res.json({ 
         status: 'healthy',
         service: 'Void Secure Logger',
-        version: '3.2.0',
+        version: '3.2.1',
         timestamp: new Date().toISOString(),
         discord_configured: !!DISCORD_WEBHOOK,
+        github_configured: !!process.env.GITHUB_TOKEN,
         uptime: process.uptime(),
         memory: process.memoryUsage(),
         requests_in_memory: requestStore.size,
@@ -347,7 +404,7 @@ app.get('/log', (req, res) => {
   "data": "encoded_encrypted_json_string",
   "signature": "hex_signature",
   "timestamp": 1234567890,
-  "version": "3.2.0",
+  "version": "3.2.1",
   "request_id": "RBLX_1234567890_1234567"
 }
         </pre>
@@ -429,15 +486,15 @@ app.post('/log', async (req, res) => {
             console.log(`   🎮 Game: ${payload.game_name || 'Unknown'}`);
             console.log(`   🔑 HWID: ${payload.hwid ? 'Provided' : 'Missing'}`);
             
-            // ========== ADD THIS SECTION HERE ==========
-            // Record execution in statistics
+            // ========== RECORD TO GITHUB STATS ==========
             try {
                 await statsManager.recordExecution(payload);
-                console.log(`📊 [${requestId}] Statistics recorded`);
+                console.log(`📊 [${requestId}] Statistics recorded to GitHub`);
             } catch (statsError) {
-                console.error(`⚠️ [${requestId}] Stats recording failed:`, statsError.message);
+                console.error(`⚠️ [${requestId}] GitHub stats recording failed:`, statsError.message);
+                console.log(`🔄 [${requestId}] Will retry on next execution`);
             }
-            // ===========================================
+            // ============================================
             
         } catch (decryptError) {
             console.error(`❌ [${requestId}] Decryption failed:`, decryptError.message);
@@ -447,15 +504,14 @@ app.post('/log', async (req, res) => {
                 console.log(`⚠️ [${requestId}] Using raw test payload`);
                 payload = req.body;
                 
-                // ========== ADD THIS SECTION HERE TOO ==========
-                // Record test execution in statistics
+                // ========== RECORD TEST TO GITHUB STATS ==========
                 try {
                     await statsManager.recordExecution(payload);
-                    console.log(`📊 [${requestId}] Statistics recorded from test payload`);
+                    console.log(`📊 [${requestId}] Test statistics recorded to GitHub`);
                 } catch (statsError) {
-                    console.error(`⚠️ [${requestId}] Stats recording failed:`, statsError.message);
+                    console.error(`⚠️ [${requestId}] GitHub stats recording failed:`, statsError.message);
                 }
-                // ================================================
+                // ==================================================
                 
             } else {
                 return res.status(400).json({ 
@@ -505,6 +561,7 @@ app.post('/log', async (req, res) => {
             request_id: requestId,
             processing_time: `${processingTime}ms`,
             discord_queued: !!DISCORD_WEBHOOK,
+            github_stored: !!process.env.GITHUB_TOKEN,
             timestamp: new Date().toISOString(),
             data_received: {
                 username: payload.username || "Unknown",
@@ -543,6 +600,7 @@ app.use((req, res) => {
             <li><a href="/">GET /</a> - Homepage</li>
             <li><a href="/health">GET /health</a> - Health check</li>
             <li><a href="/test-discord">GET /test-discord</a> - Test Discord</li>
+            <li><a href="/github-status">GET /github-status</a> - GitHub Stats Status</li>
             <li>POST /log - Log endpoint (POST only)</li>
             <li><a href="/stats">GET /stats</a> - Statistics Dashboard</li>
         </ul>
@@ -570,23 +628,54 @@ app.use((err, req, res, next) => {
 });
 
 // ========== START SERVER ==========
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`=========================================`);
-    console.log(`🚀 VOID SECURE LOGGER v3.2.0`);
+    console.log(`🚀 VOID SECURE LOGGER v3.2.1`);
     console.log(`=========================================`);
     console.log(`📡 Port: ${PORT}`);
     console.log(`🌐 URL: https://void-secure-logger.onrender.com`);
     console.log(`🤖 Discord: ${DISCORD_WEBHOOK ? '✅ CONFIGURED' : '❌ NOT CONFIGURED'}`);
     console.log(`🔐 Secret: ${SHARED_SECRET ? 'SET' : 'USING DEFAULT'}`);
+    
+    // Initialize GitHub Stats
+    try {
+        if (process.env.GITHUB_TOKEN) {
+            console.log(`🐙 GitHub Stats: ✅ CONFIGURED`);
+            console.log(`   • Owner: ${process.env.GITHUB_REPO_OWNER || 'not-set'}`);
+            console.log(`   • Repo: ${process.env.GITHUB_REPO_NAME || 'void-secure-logger-stats'}`);
+            console.log(`   • File: ${process.env.GITHUB_FILE_PATH || 'execution-stats.json'}`);
+            
+            // Load initial stats to verify connection
+            const stats = await statsManager.loadStats();
+            console.log(`   • Loaded: ${stats.total_executions || 0} executions`);
+            console.log(`   • Games: ${Object.keys(stats.games || {}).length}`);
+            console.log(`   • Users: ${Object.keys(stats.users || {}).length}`);
+        } else {
+            console.log(`🐙 GitHub Stats: ❌ NOT CONFIGURED (using local fallback)`);
+            console.log(`   • Set GITHUB_TOKEN to enable GitHub storage`);
+        }
+    } catch (error) {
+        console.error(`🐙 GitHub Stats: ⚠️ ERROR - ${error.message}`);
+    }
+    
     console.log(`⏰ Server Time: ${new Date().toLocaleTimeString()}`);
     console.log(`📊 Statistics: ✅ ENABLED`);
     console.log(`   • Dashboard: https://void-secure-logger.onrender.com/stats`);
+    console.log(`   • GitHub Status: https://void-secure-logger.onrender.com/github-status`);
     console.log(`=========================================`);
     
     if (!DISCORD_WEBHOOK) {
         console.error('\n❌ WARNING: No Discord webhook configured!');
         console.log('💡 To fix, add to Render Dashboard → Environment:');
         console.log('   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/ID/TOKEN\n');
+    }
+    
+    if (!process.env.GITHUB_TOKEN) {
+        console.warn('\n⚠️  WARNING: No GitHub token configured!');
+        console.log('💡 To enable GitHub stats storage, add:');
+        console.log('   GITHUB_TOKEN=ghp_yourtokenhere');
+        console.log('   GITHUB_REPO_OWNER=your-username');
+        console.log('   GITHUB_REPO_NAME=void-secure-logger-stats\n');
     }
     
     if (SHARED_SECRET === "V0!d_S3cur3K3y@2024#RBLX") {
@@ -597,6 +686,7 @@ app.listen(PORT, () => {
     console.log(`   • Homepage: https://void-secure-logger.onrender.com`);
     console.log(`   • Health: https://void-secure-logger.onrender.com/health`);
     console.log(`   • Discord Test: https://void-secure-logger.onrender.com/test-discord`);
+    console.log(`   • GitHub Status: https://void-secure-logger.onrender.com/github-status`);
     console.log(`   • Statistics Dashboard: https://void-secure-logger.onrender.com/stats`);
     console.log(`=========================================\n`);
 });

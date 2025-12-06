@@ -63,7 +63,7 @@ function xorDecrypt(data, key) {
 function formatDiscordEmbed(data) {
     // EXACT FORMAT from your screenshot
     return {
-        username: "Void Execution Logger (APP)",
+        username: "Void Execution Logger",
         embeds: [{
             title: "Execution Logged",
             color: 16711680, // Red
@@ -253,7 +253,7 @@ app.get('/test-discord', async (req, res) => {
         console.log('🔄 Testing Discord webhook...');
         
         const testEmbed = {
-            username: "Void Execution Logger (APP)",
+            username: "Void Execution Logger",
             embeds: [{
                 title: "Execution Logged",
                 color: 16711680,

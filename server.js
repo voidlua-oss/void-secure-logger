@@ -1,4 +1,3 @@
-
 // ====================================================
 // VOID SECURE LOGGER - COMPLETE VERSION
 // For: https://void-secure-logger.onrender.com
@@ -7,6 +6,11 @@
 const express = require('express');
 const axios = require('axios');
 const app = express();
+
+// ========== ADD THESE 2 LINES HERE ==========
+const statsManager = require('./stats');
+const statsRouter = require('./stats-routes');
+// ============================================
 
 // ========== CONFIGURATION ==========
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
@@ -425,6 +429,16 @@ app.post('/log', async (req, res) => {
             console.log(`   🎮 Game: ${payload.game_name || 'Unknown'}`);
             console.log(`   🔑 HWID: ${payload.hwid ? 'Provided' : 'Missing'}`);
             
+            // ========== ADD THIS SECTION HERE ==========
+            // Record execution in statistics
+            try {
+                await statsManager.recordExecution(payload);
+                console.log(`📊 [${requestId}] Statistics recorded`);
+            } catch (statsError) {
+                console.error(`⚠️ [${requestId}] Stats recording failed:`, statsError.message);
+            }
+            // ===========================================
+            
         } catch (decryptError) {
             console.error(`❌ [${requestId}] Decryption failed:`, decryptError.message);
             
@@ -432,6 +446,17 @@ app.post('/log', async (req, res) => {
             if (req.body.username && req.body.user_id) {
                 console.log(`⚠️ [${requestId}] Using raw test payload`);
                 payload = req.body;
+                
+                // ========== ADD THIS SECTION HERE TOO ==========
+                // Record test execution in statistics
+                try {
+                    await statsManager.recordExecution(payload);
+                    console.log(`📊 [${requestId}] Statistics recorded from test payload`);
+                } catch (statsError) {
+                    console.error(`⚠️ [${requestId}] Stats recording failed:`, statsError.message);
+                }
+                // ================================================
+                
             } else {
                 return res.status(400).json({ 
                     success: false,
@@ -501,6 +526,9 @@ app.post('/log', async (req, res) => {
     }
 });
 
+// ========== STATISTICS DASHBOARD ==========
+app.use('/stats', statsRouter);
+
 // 404 handler
 app.use((req, res) => {
     res.status(404).send(`
@@ -516,6 +544,7 @@ app.use((req, res) => {
             <li><a href="/health">GET /health</a> - Health check</li>
             <li><a href="/test-discord">GET /test-discord</a> - Test Discord</li>
             <li>POST /log - Log endpoint (POST only)</li>
+            <li><a href="/stats">GET /stats</a> - Statistics Dashboard</li>
         </ul>
         <p><a href="/">← Back to Home</a></p>
     </body>
@@ -550,6 +579,8 @@ app.listen(PORT, () => {
     console.log(`🤖 Discord: ${DISCORD_WEBHOOK ? '✅ CONFIGURED' : '❌ NOT CONFIGURED'}`);
     console.log(`🔐 Secret: ${SHARED_SECRET ? 'SET' : 'USING DEFAULT'}`);
     console.log(`⏰ Server Time: ${new Date().toLocaleTimeString()}`);
+    console.log(`📊 Statistics: ✅ ENABLED`);
+    console.log(`   • Dashboard: https://void-secure-logger.onrender.com/stats`);
     console.log(`=========================================`);
     
     if (!DISCORD_WEBHOOK) {
@@ -566,5 +597,6 @@ app.listen(PORT, () => {
     console.log(`   • Homepage: https://void-secure-logger.onrender.com`);
     console.log(`   • Health: https://void-secure-logger.onrender.com/health`);
     console.log(`   • Discord Test: https://void-secure-logger.onrender.com/test-discord`);
+    console.log(`   • Statistics Dashboard: https://void-secure-logger.onrender.com/stats`);
     console.log(`=========================================\n`);
 });

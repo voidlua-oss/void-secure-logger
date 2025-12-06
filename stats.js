@@ -87,8 +87,8 @@ class StatsManager {
         };
         
         stats.executions.push(executionRecord);
-        if (stats.executions.length > 10000) {
-            stats.executions = stats.executions.slice(-10000);
+        if (stats.executions.length > 50000) {
+            stats.executions = stats.executions.slice(-50000);
         }
         
         stats.total_executions++;

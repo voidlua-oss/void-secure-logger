@@ -7,6 +7,44 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
+// ========== DDOS PROTECTION ==========
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+
+// Basic security headers
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable for flexibility with embeds
+    crossOriginEmbedderPolicy: false
+}));
+
+// Global rate limiting for all routes
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: {
+        success: false,
+        error: "Too many requests from this IP, please try again later.",
+        retry_after: 900
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Apply to all routes
+app.use(globalLimiter);
+
+// Stricter rate limiting for /log endpoint
+const logLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // Limit each IP to 20 log requests per minute
+    message: {
+        success: false,
+        error: "Too many log requests. Please slow down.",
+        retry_after: 60
+    },
+    skipSuccessfulRequests: false
+});
+
 // ========== STATS MANAGER ==========
 // Choose which stats manager to use:
 // Option 1: Local file storage (original)
@@ -29,23 +67,91 @@ setInterval(() => {
     console.log(`💓 [${now}] Keep-alive ping`);
 }, 4 * 60 * 1000); // Every 5 minutes
 
-// ========== REQUEST STORE (Rate Limiting) ==========
+// ========== REQUEST STORE (Enhanced Rate Limiting) ==========
 const requestStore = new Map();
+const ipBlocklist = new Map();
 
 // Clean old requests every 5 minutes
 setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
+    
+    // Clean old requests
     for (const [key, value] of requestStore.entries()) {
-        if (now - value > 5 * 60 * 1000) {
+        if (now - value.timestamp > 5 * 60 * 1000) {
             requestStore.delete(key);
             cleaned++;
         }
     }
+    
+    // Clean expired IP blocks
+    for (const [ip, block] of ipBlocklist.entries()) {
+        if (now > block.expires) {
+            ipBlocklist.delete(ip);
+            console.log(`✅ IP ${ip} unblocked`);
+        }
+    }
+    
     if (cleaned > 0) {
         console.log(`🧹 Cleaned ${cleaned} old requests`);
     }
 }, 5 * 60 * 1000);
+
+// ========== DDOS PROTECTION MIDDLEWARE ==========
+function ddosProtection(req, res, next) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    
+    // Check if IP is blocked
+    const block = ipBlocklist.get(ip);
+    if (block) {
+        if (Date.now() > block.expires) {
+            ipBlocklist.delete(ip);
+        } else {
+            const remaining = Math.ceil((block.expires - Date.now()) / 1000);
+            return res.status(429).json({
+                success: false,
+                error: `IP temporarily blocked. Try again in ${remaining} seconds.`,
+                blocked: true
+            });
+        }
+    }
+    
+    // Track request frequency
+    const now = Date.now();
+    const ipKey = `ip_${ip}`;
+    const ipData = requestStore.get(ipKey) || { count: 0, firstRequest: now, lastRequest: now };
+    
+    // Reset counter if more than 60 seconds passed
+    if (now - ipData.firstRequest > 60000) {
+        ipData.count = 1;
+        ipData.firstRequest = now;
+    } else {
+        ipData.count++;
+    }
+    ipData.lastRequest = now;
+    
+    requestStore.set(ipKey, ipData);
+    
+    // Block IP if too many requests
+    if (ipData.count > 100) { // 100 requests per minute max
+        const blockDuration = 5 * 60 * 1000; // 5 minutes
+        ipBlocklist.set(ip, {
+            expires: now + blockDuration,
+            reason: 'Too many requests'
+        });
+        console.log(`🚫 Blocked IP ${ip} for 5 minutes (${ipData.count} requests)`);
+        return res.status(429).json({
+            success: false,
+            error: "Rate limit exceeded. IP temporarily blocked.",
+            retry_after: 300
+        });
+    }
+    
+    next();
+}
+
+// Apply DDOS protection to all routes
+app.use(ddosProtection);
 
 // ========== DECRYPTION FUNCTIONS ==========
 function customDecode(encoded) {
@@ -171,8 +277,26 @@ app.get('/github-status', async (req, res) => {
 
 // ========== ROUTES ==========
 
-// GET / - Homepage
+// GET / - Empty white screen
 app.get('/', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Void Secure Logger</title>
+        <style>
+            * { margin: 0; padding: 0; }
+            body { background-color: white; }
+        </style>
+    </head>
+    <body>
+    </body>
+    </html>
+    `);
+});
+
+// GET /homepagevoidlogger - Original homepage
+app.get('/homepagevoidlogger', (req, res) => {
     const html = `
     <!DOCTYPE html>
     <html>
@@ -209,8 +333,13 @@ app.get('/', (req, res) => {
         
         <div class="endpoint">
             <h3>GET <code>/</code></h3>
+            <p>Empty white screen</p>
+        </div>
+        
+        <div class="endpoint">
+            <h3>GET <code>/homepagevoidlogger</code></h3>
             <p>This page - shows server status</p>
-            <a href="/" class="btn">Refresh</a>
+            <a href="/homepagevoidlogger" class="btn">Refresh</a>
         </div>
         
         <div class="endpoint">
@@ -387,19 +516,49 @@ app.get('/test-discord', async (req, res) => {
     }
 });
 
-// GET /log - Info page
+// GET /log - Minimal info page (no navigation)
 app.get('/log', (req, res) => {
     const html = `
     <!DOCTYPE html>
     <html>
-    <head><title>/log Endpoint Info</title></head>
+    <head>
+        <title>/log Endpoint</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                max-width: 600px; 
+                margin: 0 auto; 
+                padding: 20px; 
+                background: #f5f5f5;
+            }
+            .container {
+                background: white;
+                padding: 20px;
+                border-radius: 5px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            pre {
+                background: #2d2d2d;
+                color: #f8f8f2;
+                padding: 15px;
+                border-radius: 5px;
+                overflow-x: auto;
+            }
+            code {
+                background: #eee;
+                padding: 2px 5px;
+                border-radius: 3px;
+            }
+        </style>
+    </head>
     <body>
-        <h1>📝 /log Endpoint</h1>
-        <p><strong>⚠️ This endpoint only accepts POST requests!</strong></p>
-        <p>It receives encrypted logs from Roblox Lua scripts.</p>
-        
-        <h2>📦 Expected Format:</h2>
-        <pre>
+        <div class="container">
+            <h1>📝 /log Endpoint</h1>
+            <p><strong>⚠️ This endpoint only accepts POST requests!</strong></p>
+            <p>It receives encrypted logs from Roblox Lua scripts.</p>
+            
+            <h2>📦 Expected Format:</h2>
+            <pre>
 {
   "data": "encoded_encrypted_json_string",
   "signature": "hex_signature",
@@ -407,24 +566,23 @@ app.get('/log', (req, res) => {
   "version": "3.2.1",
   "request_id": "RBLX_1234567890_1234567"
 }
-        </pre>
-        
-        <h2>🔧 Test with curl:</h2>
-        <pre>
+            </pre>
+            
+            <h2>🔧 Test with curl:</h2>
+            <pre>
 curl -X POST https://void-secure-logger.onrender.com/log \\
   -H "Content-Type: application/json" \\
   -d '{"data":"123456789","signature":"test","timestamp":1234567890,"request_id":"test"}'
-        </pre>
-        
-        <p><a href="/">← Back to Home</a></p>
+            </pre>
+        </div>
     </body>
     </html>
     `;
     res.send(html);
 });
 
-// POST /log - Main logging endpoint
-app.post('/log', async (req, res) => {
+// POST /log - Main logging endpoint with rate limiting
+app.post('/log', logLimiter, async (req, res) => {
     const startTime = Date.now();
     const requestId = req.body.request_id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
@@ -452,23 +610,7 @@ app.post('/log', async (req, res) => {
                 request_id: requestId
             });
         }
-        requestStore.set(request_id, Date.now());
-
-        // IP-based rate limiting
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
-        const ipKey = `ip_${ip}`;
-        const ipCount = requestStore.get(ipKey) || 0;
-
-        if (ipCount > 20) { // Max 20 requests per IP
-            console.log(`⏸️ [${requestId}] Rate limited IP: ${ip}`);
-            return res.status(429).json({ 
-                success: false,
-                error: "Rate limit exceeded. Please wait before sending more logs.",
-                retry_after: 60,
-                request_id: requestId
-            });
-        }
-        requestStore.set(ipKey, ipCount + 1);
+        requestStore.set(request_id, { timestamp: Date.now(), data: 'log_request' });
 
         // Decrypt the data
         console.log(`🔓 [${requestId}] Decrypting data...`);
@@ -597,14 +739,14 @@ app.use((req, res) => {
         <p>The requested endpoint <code>${req.url}</code> was not found.</p>
         <p><strong>Available endpoints:</strong></p>
         <ul>
-            <li><a href="/">GET /</a> - Homepage</li>
+            <li><a href="/">GET /</a> - Empty page</li>
+            <li><a href="/homepagevoidlogger">GET /homepagevoidlogger</a> - Homepage</li>
             <li><a href="/health">GET /health</a> - Health check</li>
             <li><a href="/test-discord">GET /test-discord</a> - Test Discord</li>
             <li><a href="/github-status">GET /github-status</a> - GitHub Stats Status</li>
             <li>POST /log - Log endpoint (POST only)</li>
             <li><a href="/stats">GET /stats</a> - Statistics Dashboard</li>
         </ul>
-        <p><a href="/">← Back to Home</a></p>
     </body>
     </html>
     `);
@@ -621,7 +763,6 @@ app.use((err, req, res, next) => {
         <h1>💥 500 - Server Error</h1>
         <p>An unexpected error occurred.</p>
         <p><code>${err.message}</code></p>
-        <p><a href="/">← Back to Home</a></p>
     </body>
     </html>
     `);
@@ -636,6 +777,10 @@ app.listen(PORT, async () => {
     console.log(`🌐 URL: https://void-secure-logger.onrender.com`);
     console.log(`🤖 Discord: ${DISCORD_WEBHOOK ? '✅ CONFIGURED' : '❌ NOT CONFIGURED'}`);
     console.log(`🔐 Secret: ${SHARED_SECRET ? 'SET' : 'USING DEFAULT'}`);
+    console.log(`🛡️ DDOS Protection: ✅ ENABLED`);
+    console.log(`   • Rate limiting: 100 requests/15min`);
+    console.log(`   • IP blocking: 100 requests/minute`);
+    console.log(`   • Security headers: ✅`);
     
     // Initialize GitHub Stats
     try {
@@ -683,7 +828,8 @@ app.listen(PORT, async () => {
     }
     
     console.log(`👉 Test endpoints:`);
-    console.log(`   • Homepage: https://void-secure-logger.onrender.com`);
+    console.log(`   • Empty page: https://void-secure-logger.onrender.com`);
+    console.log(`   • Homepage: https://void-secure-logger.onrender.com/homepagevoidlogger`);
     console.log(`   • Health: https://void-secure-logger.onrender.com/health`);
     console.log(`   • Discord Test: https://void-secure-logger.onrender.com/test-discord`);
     console.log(`   • GitHub Status: https://void-secure-logger.onrender.com/github-status`);

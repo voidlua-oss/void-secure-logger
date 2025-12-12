@@ -279,7 +279,7 @@ app.get('/github-status', async (req, res) => {
 
 // GET / - Empty white screen
 app.get('/', (req, res) => {
-    res.send(`
+    const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -292,7 +292,8 @@ app.get('/', (req, res) => {
     <body>
     </body>
     </html>
-    `);
+    `;
+    res.send(html);
 });
 
 // GET /homepagevoidlogger - Original homepage
@@ -370,6 +371,7 @@ app.get('/homepagevoidlogger', (req, res) => {
   "data": "encoded_encrypted_data",
   "signature": "signature_hash",
   "timestamp": 1234567890,
+  "version": "3.2.1",
   "request_id": "unique_id"
 }
             </pre>
@@ -516,7 +518,7 @@ app.get('/test-discord', async (req, res) => {
     }
 });
 
-// GET /log - Minimal info page (no navigation)
+// GET /log - Completely empty page (no text at all)
 app.get('/log', (req, res) => {
     const html = `
     <!DOCTYPE html>
@@ -524,57 +526,11 @@ app.get('/log', (req, res) => {
     <head>
         <title>/log Endpoint</title>
         <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                max-width: 600px; 
-                margin: 0 auto; 
-                padding: 20px; 
-                background: #f5f5f5;
-            }
-            .container {
-                background: white;
-                padding: 20px;
-                border-radius: 5px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-            pre {
-                background: #2d2d2d;
-                color: #f8f8f2;
-                padding: 15px;
-                border-radius: 5px;
-                overflow-x: auto;
-            }
-            code {
-                background: #eee;
-                padding: 2px 5px;
-                border-radius: 3px;
-            }
+            * { margin: 0; padding: 0; }
+            body { background-color: white; }
         </style>
     </head>
     <body>
-        <div class="container">
-            <h1>📝 /log Endpoint</h1>
-            <p><strong>⚠️ This endpoint only accepts POST requests!</strong></p>
-            <p>It receives encrypted logs from Roblox Lua scripts.</p>
-            
-            <h2>📦 Expected Format:</h2>
-            <pre>
-{
-  "data": "encoded_encrypted_json_string",
-  "signature": "hex_signature",
-  "timestamp": 1234567890,
-  "version": "3.2.1",
-  "request_id": "RBLX_1234567890_1234567"
-}
-            </pre>
-            
-            <h2>🔧 Test with curl:</h2>
-            <pre>
-curl -X POST https://void-secure-logger.onrender.com/log \\
-  -H "Content-Type: application/json" \\
-  -d '{"data":"123456789","signature":"test","timestamp":1234567890,"request_id":"test"}'
-            </pre>
-        </div>
     </body>
     </html>
     `;

@@ -684,30 +684,24 @@ app.post('/log', logLimiter, async (req, res) => {
 // ========== STATISTICS DASHBOARD ==========
 app.use('/stats', statsRouter);
 
-// 404 handler
+
+// 404 handler 
 app.use((req, res) => {
     res.status(404).send(`
     <!DOCTYPE html>
     <html>
-    <head><title>404 Not Found</title></head>
+    <head>
+        <title>404 Not Found</title>
+        <style>
+            * { margin: 0; padding: 0; }
+            body { background-color: white; }
+        </style>
+    </head>
     <body>
-        <h1>❌ 404 - Endpoint Not Found</h1>
-        <p>The requested endpoint <code>${req.url}</code> was not found.</p>
-        <p><strong>Available endpoints:</strong></p>
-        <ul>
-            <li><a href="/">GET /</a> - Empty page</li>
-            <li><a href="/homepagevoidlogger">GET /homepagevoidlogger</a> - Homepage</li>
-            <li><a href="/health">GET /health</a> - Health check</li>
-            <li><a href="/test-discord">GET /test-discord</a> - Test Discord</li>
-            <li><a href="/github-status">GET /github-status</a> - GitHub Stats Status</li>
-            <li>POST /log - Log endpoint (POST only)</li>
-            <li><a href="/stats">GET /stats</a> - Statistics Dashboard</li>
-        </ul>
     </body>
     </html>
     `);
 });
-
 // Error handler
 app.use((err, req, res, next) => {
     console.error('🚨 Unhandled error:', err);

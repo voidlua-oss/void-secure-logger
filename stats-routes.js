@@ -252,9 +252,9 @@ statsRouter.get('/debug', async (req, res) => {
             success: true,
             storage: stats.storage || 'unknown',
             total_executions: stats.total_executions || 0,
-            daily: periodCounts.daily
-            weekly: periodCounts.weekly,
-            monthly: periodCounts.monthly
+            daily: stats.today
+            weekly: stats.this_week,
+            monthly: periodCounts.this_month,
             games_count: Object.keys(stats.games || {}).length,
             users_count: Object.keys(stats.users || {}).length,
             last_updated: stats.last_updated || 'never',

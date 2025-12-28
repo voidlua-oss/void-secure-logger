@@ -248,13 +248,15 @@ statsRouter.get('/reset-data', async (req, res) => {
 statsRouter.get('/debug', async (req, res) => {
     try {
         const stats = await statsManager.loadStats();
+
+        const periodCounts = statsManager.getPeriodCounts(stats);
         res.json({
             success: true,
             storage: stats.storage || 'unknown',
             total_executions: stats.total_executions || 0,
-            daily: stats.today,
-            weekly: stats.this_week,
-            monthly: stats.this_month,
+            daily: periodCounts.daily,
+            weekly: periodCounts.weekly,
+            monthly: periodCounts.monthly,
             games_count: Object.keys(stats.games || {}).length,
             users_count: Object.keys(stats.users || {}).length,
             last_updated: stats.last_updated || 'never',
